@@ -27,6 +27,7 @@ entry("wait");
 entry("pipe");
 entry("read");
 entry("write");
+entry("interpose");
 entry("close");
 entry("kill");
 entry("exec");
