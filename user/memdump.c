@@ -60,6 +60,104 @@ main(int argc, char *argv[])
 void
 memdump(char *fmt, char *data, int len)
 {
-  // Your code here.  `data` holds `len` valid bytes.
+    int offset = 0;
 
+    for (int j = 0; fmt[j] != '\0'; j++) {
+
+        // i: Doc 4 byte, in so nguyen 32-bit
+        if (fmt[j] == 'i') {
+            if (offset + 4 > len) {
+                printf("memdump: not enough data for 'i'\n");
+                return;
+            }
+
+            int value;
+            memmove(&value, data + offset, 4);
+            printf("%d\n", value);
+
+            offset += 4;
+        }
+
+        // p: Doc 8 byte, in so hexa 64-bit
+        else if (fmt[j] == 'p') {
+            if (offset + 8 > len) {
+                printf("memdump: not enough data for 'p'\n");
+                return;
+            }
+
+            uint64 value;
+            memmove(&value, data + offset, 8);
+
+            // In hexa khong co tien to 0x
+            char hex[] = "0123456789abcdef";
+            int started = 0;
+
+            for (int k = 15; k >= 0; k--) {
+                int digit = (value >> (k * 4)) & 0xf;
+
+                if (digit != 0 || started || k == 0) {
+                    printf("%c", hex[digit]);
+                    started = 1;
+                }
+            }
+            printf("\n");
+
+            offset += 8;
+        }
+
+        // h: Doc 2 byte, in so nguyen 16-bit
+        else if (fmt[j] == 'h') {
+            if (offset + 2 > len) {
+                printf("memdump: not enough data for 'h'\n");
+                return;
+            }
+
+            short value;
+            memmove(&value, data + offset, 2);
+            printf("%d\n", (int)value);
+
+            offset += 2;
+        }
+
+        // c: Doc 1 byte, in ky tu
+        else if (fmt[j] == 'c') {
+            if (offset + 1 > len) {
+                printf("memdump: not enough data for 'c'\n");
+                return;
+            }
+
+            char value = data[offset];
+            printf("%c\n", value);
+
+            offset += 1;
+        }
+
+        // s: Doc 8 byte chua con tro den chuoi
+        else if (fmt[j] == 's') {
+            if (offset + 8 > len) {
+                printf("memdump: not enough data for 's'\n");
+                return;
+            }
+
+            char *str;
+            memmove(&str, data + offset, 8);
+            printf("%s\n", str);
+
+            offset += 8;
+        }
+
+        // S: Doc chuoi truc tiep trong data
+        else if (fmt[j] == 'S') {
+            while (offset < len && data[offset] != '\0') {
+                printf("%c", data[offset]);
+                offset++;
+            }
+
+            printf("\n");
+
+            if (offset < len && data[offset] == '\0') {
+                offset++;
+            }
+        }
+    }
 }
