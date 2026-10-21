@@ -133,7 +133,7 @@ runcmd(struct cmd *cmd)
   exit(0);
 }
 
-#define MAX_HIST 32
+#define MAX_HIST  32
 #define HIST_SIZE 128
 
 static char history[MAX_HIST][HIST_SIZE];
@@ -442,7 +442,8 @@ main(void)
 
     char clean_name[16];
     int k = 0;
-    while (cmd[k] && cmd[k] != ' ' && cmd[k] != '\t' && cmd[k] != '\n' && cmd[k] != '\r' && k < 15) {
+    while (cmd[k] && cmd[k] != ' ' && cmd[k] != '\t' && cmd[k] != '\n' &&
+           cmd[k] != '\r' && k < 15) {
       clean_name[k] = cmd[k];
       k++;
     }
@@ -455,7 +456,8 @@ main(void)
       continue;
     }
 
-    if (cmd[0] == 'c' && cmd[1] == 'd' && (cmd[2] == ' ' || cmd[2] == '\t' || cmd[2] == '\n' || cmd[2] == '\0')) {
+    if (cmd[0] == 'c' && cmd[1] == 'd' &&
+        (cmd[2] == ' ' || cmd[2] == '\t' || cmd[2] == '\n' || cmd[2] == '\0')) {
       char *p = cmd + 2;
       while (*p == ' ' || *p == '\t')
         p++;
