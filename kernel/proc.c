@@ -124,7 +124,8 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-
+  p->syscall_mask = 0;
+  p->allowed_path[0] = '\0';
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
     freeproc(p);
@@ -278,6 +279,10 @@ kfork(void)
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
+  // Process con kế thừa syscall_mask từ process cha
+  np->syscall_mask = p->syscall_mask;
+  // Process con kế thừa đường dẫn được phép từ process cha
+  safestrcpy(np->allowed_path, p->allowed_path, MAXPATH);
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
 
@@ -601,6 +606,9 @@ wakeup(void *chan)
 int
 kkill(int pid)
 {
+  if (pid <= 1)
+    return -1;
+
   struct proc *p;
 
   for (p = proc; p < &proc[NPROC]; p++) {

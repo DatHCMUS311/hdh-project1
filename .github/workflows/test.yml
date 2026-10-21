@@ -7,9 +7,23 @@ jobs:
       - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-linux-gnu qemu-system-riscv clang-format bc
       - run: make fmt && git diff --exit-code
-      - run: make kernel/kernel fs.img
-      - run: ./test-xv6.py usertests
-      - run: ./test-xv6.py crash
+      - name: Run system regression tests
+        run: |
+          # Attack intentionally requires uninitialized pages in LAB_SYSCALL.
+          # Check normal memory isolation separately without changing lab code.
+          if grep -qx 'LAB=syscall' conf/lab.mk; then
+            export MAKEFLAGS='XCFLAGS=-DSOL_SYSCALL'
+          fi
+          make kernel/kernel fs.img
+          ./test-xv6.py usertests
+          ./test-xv6.py crash
+      - name: Run syscall lab tests
+        run: |
+          if grep -qx 'LAB=syscall' conf/lab.mk; then
+            make clean
+            # The group submission does not require MIT answers/time files.
+            ./grade-lab-syscall sandbox attack
+          fi
 
   macos:
     runs-on: macos-latest

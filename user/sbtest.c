@@ -1,6 +1,7 @@
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "kernel/fcntl.h"
+#include "kernel/syscall.h"
 #include "user/user.h"
 
 static void
@@ -20,7 +21,7 @@ main(int argc, char *argv[])
   int r;
 
   if (argc != 2) {
-    fprintf(2, "Usage: sbtest getpid|fork|escape|forkpath\n");
+    fprintf(2, "Usage: sbtest getpid|fork|escape|forkpath|emptypath\n");
     exit(1);
   }
 
@@ -37,6 +38,18 @@ main(int argc, char *argv[])
     if (r > 0)
       wait(0);
     printf("sbtest: fork ret %d\n", r);
+  } else if (strcmp(argv[1], "emptypath") == 0) {
+    if (interpose(1 << SYS_open, "") < 0 || interpose(0, "README") < 0) {
+      fprintf(2, "sbtest: emptypath interpose failed\n");
+      exit(1);
+    }
+    r = open("README", O_RDONLY);
+    if (r >= 0) {
+      close(r);
+      printf("sbtest: emptypath ESCAPED\n");
+      exit(1);
+    }
+    printf("sbtest: emptypath confined\n");
   } else if (strcmp(argv[1], "escape") == 0) {
     interpose(0, 0);
     interpose(0, "README");

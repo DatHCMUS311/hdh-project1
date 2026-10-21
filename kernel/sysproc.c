@@ -110,3 +110,27 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+uint64
+sys_interpose(void)
+{
+  int mask;
+  char path[MAXPATH];
+  struct proc *p = myproc();
+
+  argint(0, &mask);
+
+  if (argstr(1, path, MAXPATH) < 0) {
+    return -1;
+  }
+
+  // Không cho phép xóa các giới hạn đã thiết lập
+  p->syscall_mask |= (uint)mask;
+
+  // Chỉ lưu đường dẫn khi sandbox chưa có chính sách trước đó
+  if (p->allowed_path[0] == '\0') {
+    // An empty pathname allows no exception, but still establishes a policy.
+    safestrcpy(p->allowed_path, path[0] ? path : "-", MAXPATH);
+  }
+
+  return 0;
+}
