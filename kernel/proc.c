@@ -606,6 +606,9 @@ wakeup(void *chan)
 int
 kkill(int pid)
 {
+  if (pid <= 1)
+    return -1;
+
   struct proc *p;
 
   for (p = proc; p < &proc[NPROC]; p++) {
