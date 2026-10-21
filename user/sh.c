@@ -3,6 +3,8 @@
 #include "kernel/types.h"
 #include "user/user.h"
 #include "kernel/fcntl.h"
+#include "kernel/stat.h"
+#include "kernel/fs.h"
 
 // Parsed command representation
 #define EXEC  1
@@ -131,14 +133,268 @@ runcmd(struct cmd *cmd)
   exit(0);
 }
 
+#define MAX_HIST  32
+#define HIST_SIZE 128
+
+static char history[MAX_HIST][HIST_SIZE];
+static int hist_count = 0;
+
+static int
+mystrncmp(const char *p, const char *q, uint n)
+{
+  while (n > 0 && *p && *p == *q) {
+    n--;
+    p++;
+    q++;
+  }
+  if (n == 0)
+    return 0;
+  return (uchar)*p - (uchar)*q;
+}
+
+static void
+add_history(const char *s)
+{
+  int len = strlen(s);
+  while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r'))
+    len--;
+
+  int start = 0;
+  while (start < len && (s[start] == ' ' || s[start] == '\t'))
+    start++;
+
+  if (start >= len)
+    return;
+
+  if (s[start] == '!')
+    return;
+
+  if (hist_count > 0 && strcmp(history[hist_count - 1], s + start) == 0)
+    return;
+
+  char clean[HIST_SIZE];
+  int i = 0;
+  while (start < len && i + 1 < HIST_SIZE) {
+    clean[i++] = s[start++];
+  }
+  clean[i] = 0;
+
+  if (hist_count < MAX_HIST) {
+    strcpy(history[hist_count++], clean);
+  } else {
+    for (int j = 0; j < MAX_HIST - 1; j++)
+      strcpy(history[j], history[j + 1]);
+    strcpy(history[MAX_HIST - 1], clean);
+  }
+}
+
+static void
+tab_complete(char *buf, int *len, int nbuf)
+{
+  int cur_len = *len;
+  int word_start = cur_len;
+  while (word_start > 0 && buf[word_start - 1] != ' ')
+    word_start--;
+
+  int prefix_len = cur_len - word_start;
+
+  int is_first = 1;
+  for (int i = 0; i < word_start; i++) {
+    if (buf[i] != ' ' && buf[i] != '\t') {
+      is_first = 0;
+      break;
+    }
+  }
+
+  char *dir = is_first ? "/" : ".";
+  int fd = open(dir, O_RDONLY);
+  if (fd < 0)
+    return;
+
+  struct dirent de;
+  char matches[64][DIRSIZ + 1];
+  int nmatches = 0;
+
+  while (read(fd, &de, sizeof(de)) == sizeof(de)) {
+    if (de.inum == 0)
+      continue;
+    char name[DIRSIZ + 1];
+    memmove(name, de.name, DIRSIZ);
+    name[DIRSIZ] = 0;
+
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+      continue;
+
+    if (mystrncmp(name, &buf[word_start], prefix_len) == 0) {
+      if (nmatches < 64) {
+        strcpy(matches[nmatches++], name);
+      }
+    }
+  }
+  close(fd);
+
+  if (nmatches == 0)
+    return;
+
+  for (int i = 0; i < nmatches - 1; i++) {
+    for (int j = i + 1; j < nmatches; j++) {
+      if (strcmp(matches[i], matches[j]) > 0) {
+        char tmp[DIRSIZ + 1];
+        strcpy(tmp, matches[i]);
+        strcpy(matches[i], matches[j]);
+        strcpy(matches[j], tmp);
+      }
+    }
+  }
+
+  if (nmatches == 1) {
+    char *suffix = matches[0] + prefix_len;
+    while (*suffix && cur_len + 1 < nbuf) {
+      buf[cur_len++] = *suffix;
+      write(1, suffix, 1);
+      suffix++;
+    }
+    if (cur_len + 1 < nbuf) {
+      buf[cur_len++] = ' ';
+      write(1, " ", 1);
+    }
+    buf[cur_len] = 0;
+    *len = cur_len;
+  } else {
+    write(1, "\n", 1);
+    for (int i = 0; i < nmatches; i++) {
+      if (i > 0)
+        write(1, " ", 1);
+      write(1, matches[i], strlen(matches[i]));
+    }
+    write(1, "\n$ ", 3);
+    write(1, buf, cur_len);
+  }
+}
+
 int
 getcmd(char *buf, int nbuf)
 {
+  struct stat st;
+  if (fstat(0, &st) < 0 || st.type != T_DEVICE) {
+    int i = 0;
+    char c;
+    memset(buf, 0, nbuf);
+    while (i + 1 < nbuf) {
+      int cc = read(0, &c, 1);
+      if (cc < 1)
+        break;
+      buf[i++] = c;
+      if (c == '\n' || c == '\r')
+        break;
+    }
+    buf[i] = 0;
+    if (buf[0] == 0)
+      return -1;
+    return 0;
+  }
+
   write(2, "$ ", 2);
   memset(buf, 0, nbuf);
-  gets(buf, nbuf);
-  if (buf[0] == 0) // EOF
-    return -1;
+
+  int len = 0;
+  int hist_idx = hist_count;
+
+  while (1) {
+    char c;
+    int cc = read(0, &c, 1);
+    if (cc < 1) {
+      if (len == 0)
+        return -1;
+      break;
+    }
+
+    if (c == 4) {
+      if (len == 0)
+        return -1;
+      continue;
+    }
+
+    if (c == '\r' || c == '\n') {
+      write(1, "\n", 1);
+      buf[len++] = '\n';
+      buf[len] = 0;
+      break;
+    }
+
+    if (c == '\b' || c == 0x7f) {
+      if (len > 0) {
+        len--;
+        buf[len] = 0;
+        write(1, "\b \b", 3);
+      }
+      continue;
+    }
+
+    if (c == 21) {
+      while (len > 0) {
+        len--;
+        write(1, "\b \b", 3);
+      }
+      buf[0] = 0;
+      continue;
+    }
+
+    if (c == '\t') {
+      tab_complete(buf, &len, nbuf);
+      continue;
+    }
+
+    if (c == 27) {
+      char c1, c2;
+      if (read(0, &c1, 1) == 1 && c1 == '[') {
+        if (read(0, &c2, 1) == 1) {
+          if (c2 == 'A') {
+            if (hist_idx > 0) {
+              hist_idx--;
+              while (len > 0) {
+                len--;
+                write(1, "\b \b", 3);
+              }
+              int hlen = strlen(history[hist_idx]);
+              for (int i = 0; i < hlen && len + 1 < nbuf; i++)
+                buf[len++] = history[hist_idx][i];
+              buf[len] = 0;
+              write(1, buf, len);
+            }
+          } else if (c2 == 'B') {
+            if (hist_idx < hist_count) {
+              hist_idx++;
+              while (len > 0) {
+                len--;
+                write(1, "\b \b", 3);
+              }
+              if (hist_idx < hist_count) {
+                int hlen = strlen(history[hist_idx]);
+                for (int i = 0; i < hlen && len + 1 < nbuf; i++)
+                  buf[len++] = history[hist_idx][i];
+                buf[len] = 0;
+                write(1, buf, len);
+              } else {
+                len = 0;
+                buf[0] = 0;
+              }
+            }
+          }
+        }
+      }
+      continue;
+    }
+
+    if (c >= 32 && c <= 126) {
+      if (len + 2 < nbuf) {
+        buf[len++] = c;
+        buf[len] = 0;
+        write(1, &c, 1);
+      }
+    }
+  }
+
   return 0;
 }
 
@@ -148,7 +404,6 @@ main(void)
   static char buf[100];
   int fd;
 
-  // Ensure that three file descriptors are open.
   while ((fd = open("console", O_RDWR)) >= 0) {
     if (fd >= 3) {
       close(fd);
@@ -156,23 +411,68 @@ main(void)
     }
   }
 
-  // Read and run input commands.
   while (getcmd(buf, sizeof(buf)) >= 0) {
     char *cmd = buf;
     while (*cmd == ' ' || *cmd == '\t')
       cmd++;
-    if (*cmd == '\n') // is a blank command
+    if (*cmd == '\n' || *cmd == '\0')
       continue;
-    if (cmd[0] == 'c' && cmd[1] == 'd' && cmd[2] == ' ') {
-      // Chdir must be called by the parent, not the child.
-      cmd[strlen(cmd) - 1] = 0; // chop \n
-      if (chdir(cmd + 3) < 0)
-        fprintf(2, "cannot cd %s\n", cmd + 3);
-    } else {
-      if (fork1() == 0)
-        runcmd(parsecmd(cmd));
-      wait(0);
+
+    if (cmd[0] == '!') {
+      if (cmd[1] == '!') {
+        if (hist_count == 0) {
+          fprintf(2, "no commands in history\n");
+          continue;
+        }
+        cmd = history[hist_count - 1];
+        printf("%s\n", cmd);
+      } else if (cmd[1] >= '0' && cmd[1] <= '9') {
+        int n = atoi(cmd + 1);
+        if (n >= 1 && n <= hist_count) {
+          cmd = history[n - 1];
+          printf("%s\n", cmd);
+        } else {
+          fprintf(2, "event not found: %s", cmd);
+          continue;
+        }
+      }
     }
+
+    add_history(cmd);
+
+    char clean_name[16];
+    int k = 0;
+    while (cmd[k] && cmd[k] != ' ' && cmd[k] != '\t' && cmd[k] != '\n' &&
+           cmd[k] != '\r' && k < 15) {
+      clean_name[k] = cmd[k];
+      k++;
+    }
+    clean_name[k] = 0;
+
+    if (strcmp(clean_name, "history") == 0) {
+      for (int i = 0; i < hist_count; i++) {
+        printf("%d %s\n", i + 1, history[i]);
+      }
+      continue;
+    }
+
+    if (cmd[0] == 'c' && cmd[1] == 'd' &&
+        (cmd[2] == ' ' || cmd[2] == '\t' || cmd[2] == '\n' || cmd[2] == '\0')) {
+      char *p = cmd + 2;
+      while (*p == ' ' || *p == '\t')
+        p++;
+      char *end = p;
+      while (*end && *end != '\n' && *end != '\r')
+        end++;
+      *end = 0;
+      if (chdir(p) < 0)
+        fprintf(2, "cannot cd %s\n", p);
+      continue;
+    }
+
+    if (fork1() == 0)
+      runcmd(parsecmd(cmd));
+    wait(0);
   }
   exit(0);
 }
