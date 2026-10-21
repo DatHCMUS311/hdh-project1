@@ -128,7 +128,8 @@ sys_interpose(void)
 
   // Chỉ lưu đường dẫn khi sandbox chưa có chính sách trước đó
   if (p->allowed_path[0] == '\0') {
-    safestrcpy(p->allowed_path, path, MAXPATH);
+    // An empty pathname allows no exception, but still establishes a policy.
+    safestrcpy(p->allowed_path, path[0] ? path : "-", MAXPATH);
   }
 
   return 0;

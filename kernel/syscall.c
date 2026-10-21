@@ -131,7 +131,7 @@ static uint64 (*syscalls[])(void) = {
   [SYS_mkdir]   = sys_mkdir,
   [SYS_close]   = sys_close,
   [SYS_sync]    = sys_sync,
-  [SYS_interpose] sys_interpose,
+  [SYS_interpose] = sys_interpose,
   // clang-format on
 };
 
@@ -162,8 +162,8 @@ syscall(void)
           if (p->allowed_path[0] != '\0' &&
               strncmp(p->allowed_path, "-", MAXPATH) != 0 &&
               strncmp(path, p->allowed_path, MAXPATH) == 0) {
-               allow = 1;
-           }
+            allow = 1;
+          }
         }
       }
 

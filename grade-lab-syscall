@@ -99,10 +99,12 @@ def test_sandbox_block():
 def test_sandbox_escape():
     r.run_qemu(shell_script([
         'sandbox %d - sbtest escape' % (1 << SYS_open),
+        'sbtest emptypath',
         'echo DONE',
     ]))
     r.match('^sbtest: escape confined',
-            no=['^sbtest: escape ESCAPED'])
+            '^sbtest: emptypath confined',
+            no=['^sbtest: escape ESCAPED', '^sbtest: emptypath ESCAPED'])
 
 @test(5, "sandbox_forkpath")
 def test_sandbox_forkpath():
