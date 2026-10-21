@@ -21,7 +21,8 @@ jobs:
         run: |
           if grep -qx 'LAB=syscall' conf/lab.mk; then
             make clean
-            ./grade-lab-syscall
+            # The group submission does not require MIT answers/time files.
+            ./grade-lab-syscall sandbox attack
           fi
 
   macos:
